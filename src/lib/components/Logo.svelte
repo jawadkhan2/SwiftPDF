@@ -1,0 +1,48 @@
+<script lang="ts">
+  // SwiftPDF "Velocity Doc" mark — a PDF page with motion lines.
+  let { size = 64, title = "SwiftPDF" }: { size?: number; title?: string } = $props();
+  // Unique gradient id so multiple logos on one page don't collide.
+  const uid = `swiftpdf-logo-${Math.random().toString(36).slice(2, 8)}`;
+</script>
+
+<svg
+  width={size}
+  height={size}
+  viewBox="0 0 64 64"
+  fill="none"
+  xmlns="http://www.w3.org/2000/svg"
+  role="img"
+  aria-label={title}
+>
+  <defs>
+    <linearGradient id={uid} x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5b8cff" />
+      <stop offset="1" stop-color="#2f6df6" />
+    </linearGradient>
+  </defs>
+  <rect x="14" y="6" width="36" height="52" rx="6" fill="url(#{uid})" />
+  <path
+    d="M40 6v10a4 4 0 0 0 4 4h6"
+    stroke="#fff"
+    stroke-width="2.5"
+    stroke-opacity=".5"
+    fill="none"
+  />
+  <!-- speed lines / swoosh -->
+  <path
+    d="M4 26h16M2 34h22M6 42h14"
+    stroke="#5b8cff"
+    stroke-width="3"
+    stroke-linecap="round"
+    opacity=".75"
+  />
+  <text
+    x="32"
+    y="46"
+    text-anchor="middle"
+    font-family="Arial, sans-serif"
+    font-size="13"
+    font-weight="700"
+    fill="#fff">PDF</text
+  >
+</svg>
