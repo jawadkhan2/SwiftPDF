@@ -1,7 +1,7 @@
 [package]
 name = "tauri-app"
-version = "1.0.0"
-description = "SwiftPDF — fast desktop PDF merge, split and sign"
+version = "1.0.1"
+description = "SwiftPDF ? fast desktop PDF merge, split and sign"
 authors = ["you"]
 edition = "2021"
 
@@ -28,4 +28,3 @@ image = "0.25"
 uuid = { version = "1", features = ["v4"] }
 base64 = "0.22"
 lopdf = "0.34"
-

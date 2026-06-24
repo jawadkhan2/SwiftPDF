@@ -71,7 +71,16 @@ jobs:
         with:
           tagName: ${{ github.event.inputs.tag || github.ref_name }}
           releaseName: "SwiftPDF ${{ github.event.inputs.tag || github.ref_name }}"
-          releaseBody: "Download the installer for your platform below."
+          releaseBody: |
+            Download the installer for your platform below.
+
+            macOS builds are ad-hoc signed, but they are not Apple Developer ID signed or notarized. If macOS says SwiftPDF is damaged or should be moved to the Trash, drag SwiftPDF.app to Applications, then open System Settings -> Privacy & Security and choose Open Anyway.
+
+            If Open Anyway does not appear, run this in Terminal:
+
+            ```bash
+            xattr -dr com.apple.quarantine /Applications/SwiftPDF.app
+            ```
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
