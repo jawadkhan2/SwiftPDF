@@ -12,8 +12,7 @@ pub fn run() {
         .setup(|app| {
             // Locate the bundled PDFium library and spin up the worker thread.
             let resource_dir = app.path().resource_dir().ok();
-            let worker = PdfWorker::start(resource_dir)
-                .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+            let worker = PdfWorker::start(resource_dir);
             app.manage(worker);
             Ok(())
         })

@@ -71,18 +71,19 @@ type Job = Box<dyn FnOnce(&mut WorkerState) + Send>;
 /// Handle stored in Tauri state. Cloneable, `Send + Sync`.
 #[derive(Clone)]
 pub struct PdfWorker {
-    sender: Sender<Job>,
+    sender: Option<Sender<Job>>,
+    startup_error: Option<String>,
 }
 
 impl PdfWorker {
     /// Spawn the worker thread. `resource_dir` is the Tauri resource directory
-    /// used to locate the bundled PDFium library. Fails if PDFium can't load.
-    pub fn start(resource_dir: Option<PathBuf>) -> Result<Self, String> {
+    /// used to locate the bundled PDFium library.
+    pub fn start(resource_dir: Option<PathBuf>) -> Self {
         // Initialize PDFium on a probe to surface load errors before spawning.
         let (ready_tx, ready_rx) = channel::<Result<(), String>>();
         let (job_tx, job_rx) = channel::<Job>();
 
-        thread::Builder::new()
+        if let Err(e) = thread::Builder::new()
             .name("pdf-worker".into())
             .spawn(move || {
                 let pdfium = match init_pdfium(resource_dir) {
@@ -107,13 +108,27 @@ impl PdfWorker {
                     job(&mut state);
                 }
             })
-            .map_err(|e| format!("Failed to spawn PDF worker: {e}"))?;
+        {
+            return PdfWorker::unavailable(format!("Failed to spawn PDF worker: {e}"));
+        }
 
-        ready_rx
-            .recv()
-            .map_err(|e| format!("PDF worker died on startup: {e}"))??;
+        match ready_rx.recv() {
+            Ok(Ok(())) => PdfWorker {
+                sender: Some(job_tx),
+                startup_error: None,
+            },
+            Ok(Err(e)) => PdfWorker::unavailable(e),
+            Err(e) => PdfWorker::unavailable(format!("PDF worker died on startup: {e}")),
+        }
+    }
 
-        Ok(PdfWorker { sender: job_tx })
+    fn unavailable(error: String) -> Self {
+        let message = format!("PDF engine could not start: {error}");
+        eprintln!("{message}");
+        PdfWorker {
+            sender: None,
+            startup_error: Some(message),
+        }
     }
 
     /// Run `f` on the worker thread and block for its result.
@@ -122,13 +137,35 @@ impl PdfWorker {
         T: Send + 'static,
         F: FnOnce(&mut WorkerState) -> Result<T, String> + Send + 'static,
     {
+        let sender = self.sender.as_ref().ok_or_else(|| {
+            self.startup_error
+                .clone()
+                .unwrap_or_else(|| "PDF worker is not running".to_string())
+        })?;
         let (tx, rx) = channel::<Result<T, String>>();
-        self.sender
+        sender
             .send(Box::new(move |state| {
                 let _ = tx.send(f(state));
             }))
             .map_err(|_| "PDF worker is not running".to_string())?;
         rx.recv()
             .map_err(|_| "PDF worker dropped the request".to_string())?
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unavailable_worker_returns_startup_error() {
+        let worker = PdfWorker {
+            sender: None,
+            startup_error: Some("PDF engine could not start: missing library".to_string()),
+        };
+
+        let err = worker.call(|_| Ok::<(), String>(())).unwrap_err();
+
+        assert!(err.contains("missing library"));
     }
 }
