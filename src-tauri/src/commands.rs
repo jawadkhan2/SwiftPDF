@@ -5,8 +5,7 @@ use crate::pdf::dto::{OpenResult, PagePlan, RenderResult, Stamp};
 use crate::pdf::worker::DocEntry;
 use crate::pdf::{document, pages, render, stamp, PdfWorker};
 use std::path::PathBuf;
-use tauri::{AppHandle, State};
-use tauri_plugin_dialog::DialogExt;
+use tauri::State;
 use uuid::Uuid;
 
 /// Open a PDF from disk. PDFium streams pages from the file lazily, so even a
@@ -98,15 +97,14 @@ pub fn render_page(
 }
 
 /// Build an output PDF from a page plan (reorder/delete/rotate already decided
-/// in the UI), prompt the user for a destination, and write a NEW file. The
-/// original is never touched. Returns the saved path, or `None` if cancelled.
+/// in the UI) and write a NEW file to the path chosen by the frontend dialog.
+/// The original is never touched.
 #[tauri::command]
 pub fn save_built_pdf(
-    app: AppHandle,
     worker: State<PdfWorker>,
     doc_id: String,
     plan: Vec<PagePlan>,
-    suggested_name: String,
+    path: String,
 ) -> Result<Option<String>, String> {
     // 1. Assemble the bytes on the worker thread.
     let bytes = worker.call(move |state| {
@@ -114,36 +112,19 @@ pub fn save_built_pdf(
         pages::build_document(state.pdfium, &entry.doc, &plan)
     })?;
 
-    // 2. Ask the user where to save (defaults to a "(edited)" copy name).
-    let chosen = app
-        .dialog()
-        .file()
-        .set_file_name(&suggested_name)
-        .add_filter("PDF", &["pdf"])
-        .blocking_save_file();
-
-    let Some(chosen) = chosen else {
-        return Ok(None); // user cancelled the dialog
-    };
-
-    // 3. Write the new file.
-    let path = chosen
-        .into_path()
-        .map_err(|e| format!("Invalid save location: {e}"))?;
-    std::fs::write(&path, &bytes).map_err(|e| format!("Could not save file: {e}"))?;
-    Ok(Some(path.to_string_lossy().into_owned()))
+    // 2. Write the new file to the path chosen by the frontend dialog.
+    write_pdf(path, &bytes).map(Some)
 }
 
 /// Fill & Sign: stamp the given text/signature items onto the document, then save
-/// a new copy via the native dialog. Returns the saved path, or `None` if the
-/// user cancelled. The original file is never modified.
+/// a new copy to the path chosen by the frontend dialog. The original file is
+/// never modified.
 #[tauri::command]
 pub fn save_signed_pdf(
-    app: AppHandle,
     worker: State<PdfWorker>,
     doc_id: String,
     stamps: Vec<Stamp>,
-    suggested_name: String,
+    path: String,
 ) -> Result<Option<String>, String> {
     if stamps.is_empty() {
         return Err("Add some text or a signature first.".to_string());
@@ -155,34 +136,18 @@ pub fn save_signed_pdf(
         stamp::apply_stamps(&mut doc, &stamps)
     })?;
 
-    let chosen = app
-        .dialog()
-        .file()
-        .set_file_name(&suggested_name)
-        .add_filter("PDF", &["pdf"])
-        .blocking_save_file();
-
-    let Some(chosen) = chosen else {
-        return Ok(None);
-    };
-
-    let path = chosen
-        .into_path()
-        .map_err(|e| format!("Invalid save location: {e}"))?;
-    std::fs::write(&path, &bytes).map_err(|e| format!("Could not save file: {e}"))?;
-    Ok(Some(path.to_string_lossy().into_owned()))
+    write_pdf(path, &bytes).map(Some)
 }
 
-/// Split/extract: each inner list of page indices becomes one output PDF. Prompts
-/// for a destination folder and writes `base_name (1).pdf`, `(2)` ... Returns the
-/// list of saved paths (empty if the user cancelled the folder picker).
+/// Split/extract: each inner list of page indices becomes one output PDF. Writes
+/// to the folder chosen by the frontend dialog as `base_name (1).pdf`, `(2)` ...
 #[tauri::command]
 pub fn split_pdf(
-    app: AppHandle,
     worker: State<PdfWorker>,
     doc_id: String,
     groups: Vec<Vec<usize>>,
     base_name: String,
+    folder: String,
 ) -> Result<Vec<String>, String> {
     if groups.is_empty() {
         return Err("Nothing to split — choose at least one group of pages.".to_string());
@@ -198,13 +163,7 @@ pub fn split_pdf(
         Ok(out)
     })?;
 
-    // Ask where to put the files.
-    let Some(folder) = app.dialog().file().blocking_pick_folder() else {
-        return Ok(Vec::new()); // cancelled
-    };
-    let dir = folder
-        .into_path()
-        .map_err(|e| format!("Invalid folder: {e}"))?;
+    let dir = PathBuf::from(folder);
 
     let stem = base_name.trim_end_matches(".pdf");
     let mut saved = Vec::with_capacity(blobs.len());
@@ -219,6 +178,12 @@ pub fn split_pdf(
         saved.push(path.to_string_lossy().into_owned());
     }
     Ok(saved)
+}
+
+fn write_pdf(path: String, bytes: &[u8]) -> Result<String, String> {
+    let path = PathBuf::from(path);
+    std::fs::write(&path, bytes).map_err(|e| format!("Could not save file: {e}"))?;
+    Ok(path.to_string_lossy().into_owned())
 }
 
 /// Drop a document from the registry to free memory.

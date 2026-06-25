@@ -3,7 +3,7 @@
 // rest of the UI never touches stringly-typed command names.
 
 import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 
 export interface PageInfo {
   width_pt: number;
@@ -54,6 +54,14 @@ export async function pickPdfs(): Promise<string[]> {
   return [];
 }
 
+async function pickPdfSavePath(suggestedName: string): Promise<string | null> {
+  return save({
+    defaultPath: suggestedName,
+    filters: [{ name: "PDF", extensions: ["pdf"] }],
+    canCreateDirectories: true,
+  });
+}
+
 export function openPdf(path: string): Promise<OpenResult> {
   return invoke("open_pdf", { path });
 }
@@ -83,12 +91,14 @@ export interface PagePlan {
  * Build a new PDF from `plan` and prompt for a save location. Returns the saved
  * path, or null if the user cancelled. Never modifies the original file.
  */
-export function saveBuiltPdf(
+export async function saveBuiltPdf(
   docId: string,
   plan: PagePlan[],
   suggestedName: string,
 ): Promise<string | null> {
-  return invoke("save_built_pdf", { docId, plan, suggestedName });
+  const path = await pickPdfSavePath(suggestedName);
+  if (!path) return null;
+  return invoke("save_built_pdf", { docId, plan, path });
 }
 
 /** Turn `Contract.pdf` into `Contract (edited).pdf`. */
@@ -108,12 +118,18 @@ export function mergePdfs(paths: string[]): Promise<OpenResult> {
  * Split/extract: each group of page indices becomes one output file. Prompts for
  * a folder; returns the saved paths (empty if cancelled).
  */
-export function splitPdf(
+export async function splitPdf(
   docId: string,
   groups: number[][],
   baseName: string,
 ): Promise<string[]> {
-  return invoke("split_pdf", { docId, groups, baseName });
+  const folder = await open({
+    directory: true,
+    multiple: false,
+    canCreateDirectories: true,
+  });
+  if (!folder) return [];
+  return invoke("split_pdf", { docId, groups, baseName, folder });
 }
 
 /**
@@ -145,12 +161,14 @@ export type Stamp =
  * Stamp the given items onto the document and prompt for a save location.
  * Returns the saved path, or null if cancelled. Never modifies the original.
  */
-export function saveSignedPdf(
+export async function saveSignedPdf(
   docId: string,
   stamps: Stamp[],
   suggestedName: string,
 ): Promise<string | null> {
-  return invoke("save_signed_pdf", { docId, stamps, suggestedName });
+  const path = await pickPdfSavePath(suggestedName);
+  if (!path) return null;
+  return invoke("save_signed_pdf", { docId, stamps, path });
 }
 
 export function closeDoc(docId: string): Promise<void> {
