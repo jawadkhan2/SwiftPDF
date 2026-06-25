@@ -3,6 +3,7 @@
   import { pickPdf, openPdf } from "$lib/api";
   import { setDoc } from "$lib/stores/document.svelte";
   import Logo from "$lib/components/Logo.svelte";
+  import { updater } from "$lib/updater.svelte";
 
   let busy = $state(false);
   let error = $state<string | null>(null);
@@ -81,6 +82,14 @@
   </section>
 
   <p class="hint muted">Pick what you'd like to do — we'll guide you.</p>
+
+  <button
+    class="update-link"
+    onclick={() => updater.check(true)}
+    disabled={updater.busy}
+  >
+    {updater.phase === "checking" ? "Checking…" : "Check for updates"}
+  </button>
 </main>
 
 <style>
@@ -150,6 +159,23 @@
   }
   .hint {
     margin-top: 1.5rem;
+  }
+  .update-link {
+    margin-top: 0.6rem;
+    background: none;
+    border: none;
+    color: var(--text-soft);
+    font-size: 0.85rem;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .update-link:hover:not(:disabled) {
+    color: var(--primary);
+  }
+  .update-link:disabled {
+    opacity: 0.6;
+    cursor: default;
   }
   .banner {
     width: 100%;

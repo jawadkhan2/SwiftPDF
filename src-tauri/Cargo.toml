@@ -1,6 +1,6 @@
 [package]
 name = "tauri-app"
-version = "1.0.2"
+version = "1.0.3"
 description = "SwiftPDF — fast desktop PDF merge, split and sign"
 authors = ["you"]
 edition = "2021"
@@ -21,6 +21,8 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 pdfium-render = { version = "0.8", features = ["image"] }

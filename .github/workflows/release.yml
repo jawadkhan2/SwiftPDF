@@ -70,6 +70,11 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Updater signing. Set these as repo secrets (Settings → Secrets →
+          # Actions). Without them the build still runs but updater artifacts
+          # (.sig + latest.json) are not produced, so OTA updates won't work.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.event.inputs.tag || github.ref_name }}
           releaseName: "SwiftPDF ${{ github.event.inputs.tag || github.ref_name }}"
