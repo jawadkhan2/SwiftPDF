@@ -1,6 +1,6 @@
 //! Rasterizing pages to PNG for thumbnails and the editor canvas.
 
-use super::dto::RenderResult;
+use super::{dto::RenderResult, pdfium_page_index};
 use base64::Engine as _;
 use image::ImageFormat;
 use pdfium_render::prelude::*;
@@ -14,9 +14,10 @@ pub fn render_page(
     page_index: usize,
     target_long_px: u32,
 ) -> Result<RenderResult, String> {
+    let page_index = pdfium_page_index(page_index, "Page")?;
     let page = doc
         .pages()
-        .get(page_index as u16)
+        .get(page_index)
         .map_err(|e| format!("No page {page_index}: {e}"))?;
 
     let width_pt = page.width().value;

@@ -4,7 +4,7 @@
 //! the UI overlay). PDF user space has a bottom-left origin, so each fraction is
 //! converted to points and flipped vertically here.
 
-use super::dto::Stamp;
+use super::{dto::Stamp, pdfium_page_index};
 use base64::Engine as _;
 use pdfium_render::prelude::*;
 
@@ -26,9 +26,10 @@ pub fn apply_stamps(doc: &mut PdfDocument, stamps: &[Stamp]) -> Result<Vec<u8>, 
                 text,
                 color,
             } => {
+                let page_index = pdfium_page_index(*page, "Page")?;
                 let mut p = doc
                     .pages()
-                    .get(*page as u16)
+                    .get(page_index)
                     .map_err(|e| format!("No page {}: {e}", page + 1))?;
                 let geom = PageGeom::of(&p);
                 // Font height is a fraction of the *displayed* page height.
@@ -75,9 +76,10 @@ pub fn apply_stamps(doc: &mut PdfDocument, stamps: &[Stamp]) -> Result<Vec<u8>, 
                 let image = image::load_from_memory(&png)
                     .map_err(|e| format!("Could not decode signature image: {e}"))?;
 
+                let page_index = pdfium_page_index(*page, "Page")?;
                 let mut p = doc
                     .pages()
-                    .get(*page as u16)
+                    .get(page_index)
                     .map_err(|e| format!("No page {}: {e}", page + 1))?;
                 let geom = PageGeom::of(&p);
                 // Width/height are fractions of the *displayed* page box.

@@ -19,7 +19,11 @@ pub fn multi_page_pdf_bytes(sizes: &[(f32, f32)]) -> Vec<u8> {
         .enumerate()
         .map(|(i, (w, h))| {
             // A simple content stream: draw a rectangle outline.
-            let ops = format!("1 1 1 rg 0 0 {w} {h} re f 0 0 0 RG 10 10 {0} {1} re S", w - 20.0, h - 20.0);
+            let ops = format!(
+                "1 1 1 rg 0 0 {w} {h} re f 0 0 0 RG 10 10 {0} {1} re S",
+                w - 20.0,
+                h - 20.0
+            );
             let content_id = doc.add_object(Stream::new(dictionary! {}, ops.into_bytes()));
             let page_id = doc.add_object(dictionary! {
                 "Type" => "Page",

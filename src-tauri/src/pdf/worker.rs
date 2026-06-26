@@ -17,12 +17,13 @@ use std::thread;
 /// `doc` is a live, lazily-loaded `PdfDocument` we render and read from directly
 /// — for disk files PDFium streams pages on demand, so a thousands-of-page file
 /// never has to live in memory all at once. `doc` is treated as pristine and is
-/// never mutated; mutation operations (stamping) take a fresh copy instead (see
-/// [`WorkerState::fresh_doc`]).
+/// never mutated; mutation operations snapshot the opened document bytes and
+/// work on that copy so saves always match the preview.
 pub struct DocEntry {
     pub doc: PdfDocument<'static>,
-    /// `Some` for files opened from disk (reloadable from the path); `None` for
-    /// in-memory documents such as merge results.
+    /// `Some` for files opened from disk; used only to prevent saving a copy
+    /// over the original source file. `None` for in-memory documents such as
+    /// merge results.
     pub source_path: Option<PathBuf>,
 }
 
@@ -44,8 +45,8 @@ impl WorkerState {
     }
 
     /// Load a fresh, independent copy of a document for mutation, leaving the
-    /// cached pristine `doc` untouched. Disk files reload from their path (cheap,
-    /// lazy); in-memory documents are re-serialized from the cached copy.
+    /// cached pristine `doc` untouched.
+    #[allow(dead_code)]
     pub fn fresh_doc(&self, doc_id: &str) -> Result<PdfDocument<'static>, String> {
         let entry = self.entry(doc_id)?;
         match &entry.source_path {

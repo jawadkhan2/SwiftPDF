@@ -16,7 +16,7 @@
     busy = true;
     try {
       const result = await openPdf(path);
-      setDoc(result);
+      await setDoc(result);
       await goto(route);
     } catch (e) {
       error = String(e);

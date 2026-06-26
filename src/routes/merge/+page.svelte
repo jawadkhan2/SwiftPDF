@@ -49,7 +49,7 @@
     error = null;
     try {
       const result = await mergePdfs(files.map((f) => f.path));
-      setDoc(result);
+      await setDoc(result);
       // Hand off to Organize so the user can review, reorder, and save a copy.
       await goto("/organize");
     } catch (e) {

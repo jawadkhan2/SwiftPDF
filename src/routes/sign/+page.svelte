@@ -107,9 +107,13 @@
       return;
     }
     void loadPage(0);
+  });
 
+  $effect(() => {
+    if (!pageEl) return;
     const ro = new ResizeObserver(measure);
-    if (pageEl) ro.observe(pageEl);
+    ro.observe(pageEl);
+    measure();
     return () => ro.disconnect();
   });
 
@@ -207,6 +211,7 @@
   function onSignaturePicked(dataUrl: string) {
     showSigModal = false;
     const pos = pendingPos ?? viewportCenterFrac();
+    const targetPage = pageIndex;
     pendingPos = null;
     const img = new Image();
     img.onload = () => {
@@ -216,7 +221,7 @@
       const fh = (fw * (pageW / pageH)) / aspect;
       const s: EditorStamp = {
         id: newId(),
-        page: pageIndex,
+        page: targetPage,
         type: "image",
         fx: clamp(pos.fx - fw / 2, 0, 0.95),
         fy: clamp(pos.fy - fh / 2, 0, 0.95),
@@ -401,50 +406,50 @@
   // --- Save -----------------------------------------------------------------
   async function save() {
     if (!current) return;
-    const payload: Stamp[] = [];
-    for (const s of stamps) {
-      if (s.type === "text") {
-        if (!s.text.trim()) continue;
-        payload.push({
-          kind: "Text",
-          page: s.page,
-          fx: s.fx,
-          fy: s.fy,
-          fh: s.fontFrac,
-          text: s.text,
-          color: s.color,
-        });
-      } else if (s.type === "image") {
-        payload.push({
-          kind: "Image",
-          page: s.page,
-          fx: s.fx,
-          fy: s.fy,
-          fw: s.fw,
-          fh: s.fh,
-          png_base64: s.dataUrl.split(",")[1] ?? "",
-        });
-      } else {
-        // Shape → rasterize to a PNG and reuse the image stamp pipeline.
-        const dataUrl = await shapeToPng(s.shape, s.color);
-        payload.push({
-          kind: "Image",
-          page: s.page,
-          fx: s.fx,
-          fy: s.fy,
-          fw: s.fw,
-          fh: s.fh,
-          png_base64: dataUrl.split(",")[1] ?? "",
-        });
-      }
-    }
-    if (payload.length === 0) {
-      toast = { kind: "err", msg: "Add some text, a shape or a signature first." };
-      return;
-    }
     saving = true;
     toast = null;
+    const payload: Stamp[] = [];
     try {
+      for (const s of stamps) {
+        if (s.type === "text") {
+          if (!s.text.trim()) continue;
+          payload.push({
+            kind: "Text",
+            page: s.page,
+            fx: s.fx,
+            fy: s.fy,
+            fh: s.fontFrac,
+            text: s.text,
+            color: s.color,
+          });
+        } else if (s.type === "image") {
+          payload.push({
+            kind: "Image",
+            page: s.page,
+            fx: s.fx,
+            fy: s.fy,
+            fw: s.fw,
+            fh: s.fh,
+            png_base64: s.dataUrl.split(",")[1] ?? "",
+          });
+        } else {
+          // Shape → rasterize to a PNG and reuse the image stamp pipeline.
+          const dataUrl = await shapeToPng(s.shape, s.color);
+          payload.push({
+            kind: "Image",
+            page: s.page,
+            fx: s.fx,
+            fy: s.fy,
+            fw: s.fw,
+            fh: s.fh,
+            png_base64: dataUrl.split(",")[1] ?? "",
+          });
+        }
+      }
+      if (payload.length === 0) {
+        toast = { kind: "err", msg: "Add some text, a shape or a signature first." };
+        return;
+      }
       const path = await saveSignedPdf(
         current.doc_id,
         payload,

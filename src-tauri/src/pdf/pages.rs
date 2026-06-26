@@ -5,7 +5,7 @@
 //! a fresh document in a single pass. This keeps the UI instant and the on-disk
 //! write atomic.
 
-use super::dto::PagePlan;
+use super::{dto::PagePlan, pdfium_page_index};
 use pdfium_render::prelude::*;
 
 /// Assemble a new PDF from `source` according to `plan` and return its bytes.
@@ -21,6 +21,13 @@ pub fn build_document(
     }
 
     let src_len = source.pages().len() as usize;
+    if plan.len() > u16::MAX as usize + 1 {
+        return Err(format!(
+            "Output has too many pages for the PDF engine ({} > {}).",
+            plan.len(),
+            u16::MAX as usize + 1
+        ));
+    }
 
     let mut out = pdfium
         .create_new_pdf()
@@ -33,16 +40,19 @@ pub fn build_document(
                 item.page + 1
             ));
         }
+        let src_index = pdfium_page_index(item.page, "Page")?;
+        let dest_index = pdfium_page_index(dest, "Output page")?;
         out.pages_mut()
-            .copy_page_from_document(source, item.page as u16, dest as u16)
+            .copy_page_from_document(source, src_index, dest_index)
             .map_err(|e| format!("Failed to copy page {}: {e}", item.page + 1))?;
     }
 
     // Apply absolute rotations after all pages are in place.
     for (dest, item) in plan.iter().enumerate() {
+        let dest_index = pdfium_page_index(dest, "Output page")?;
         let mut page = out
             .pages()
-            .get(dest as u16)
+            .get(dest_index)
             .map_err(|e| format!("Failed to access output page {dest}: {e}"))?;
         page.set_rotation(rotation_from_degrees(item.rotation));
     }
@@ -61,18 +71,29 @@ pub fn merge_documents(pdfium: &Pdfium, sources: &[Vec<u8>]) -> Result<Vec<u8>, 
     let mut out = pdfium
         .create_new_pdf()
         .map_err(|e| format!("Could not create output PDF: {e}"))?;
-    let mut dest: u16 = 0;
+    let mut dest: usize = 0;
 
     for (file_i, bytes) in sources.iter().enumerate() {
         let src = pdfium
             .load_pdf_from_byte_slice(bytes, None)
             .map_err(|e| format!("File {} could not be opened: {e}", file_i + 1))?;
-        let n = src.pages().len();
+        let n = src.pages().len() as usize;
         if n == 0 {
             continue;
         }
+        let last_dest = dest
+            .checked_add(n - 1)
+            .ok_or_else(|| "Merged PDF has too many pages.".to_string())?;
+        if last_dest > u16::MAX as usize {
+            return Err(format!(
+                "Merged PDF has too many pages for the PDF engine (more than {}).",
+                u16::MAX as usize + 1
+            ));
+        }
+        let first_dest = pdfium_page_index(dest, "Output page")?;
+        let last_src = pdfium_page_index(n - 1, "Page")?;
         out.pages_mut()
-            .copy_page_range_from_document(&src, 0..=(n - 1), dest)
+            .copy_page_range_from_document(&src, 0..=last_src, first_dest)
             .map_err(|e| format!("Failed to merge file {}: {e}", file_i + 1))?;
         dest += n;
     }
@@ -97,6 +118,13 @@ pub fn extract_pages(
     }
 
     let src_len = source.pages().len() as usize;
+    if indices.len() > u16::MAX as usize + 1 {
+        return Err(format!(
+            "Output has too many pages for the PDF engine ({} > {}).",
+            indices.len(),
+            u16::MAX as usize + 1
+        ));
+    }
 
     let mut out = pdfium
         .create_new_pdf()
@@ -109,8 +137,10 @@ pub fn extract_pages(
                 idx + 1
             ));
         }
+        let src_index = pdfium_page_index(idx, "Page")?;
+        let dest_index = pdfium_page_index(dest, "Output page")?;
         out.pages_mut()
-            .copy_page_from_document(source, idx as u16, dest as u16)
+            .copy_page_from_document(source, src_index, dest_index)
             .map_err(|e| format!("Failed to copy page {}: {e}", idx + 1))?;
     }
 
@@ -151,8 +181,14 @@ mod tests {
 
         // Keep pages in reverse, drop the middle one: [2, 0].
         let plan = vec![
-            PagePlan { page: 2, rotation: 0 },
-            PagePlan { page: 0, rotation: 0 },
+            PagePlan {
+                page: 2,
+                rotation: 0,
+            },
+            PagePlan {
+                page: 0,
+                rotation: 0,
+            },
         ];
         let out = build_document(&pdfium, &source, &plan).expect("build");
         assert_eq!(page_count(&pdfium, &out), 2);
@@ -167,7 +203,10 @@ mod tests {
         let pdfium = init_pdfium(None).expect("pdfium");
         let src = multi_page_pdf_bytes(&[(200.0, 300.0)]);
         let source = pdfium.load_pdf_from_byte_vec(src, None).unwrap();
-        let plan = vec![PagePlan { page: 0, rotation: 90 }];
+        let plan = vec![PagePlan {
+            page: 0,
+            rotation: 90,
+        }];
         let out = build_document(&pdfium, &source, &plan).expect("build");
 
         let doc = pdfium.load_pdf_from_byte_slice(&out, None).unwrap();

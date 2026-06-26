@@ -10,12 +10,12 @@
 //!
 //! The cached document is treated as read-only/pristine: rendering and structural
 //! copies (merge/split/build) read from it, while the one mutating operation
-//! (stamping) works on a fresh copy (`WorkerState::fresh_doc`) so repeated saves
-//! never compound.
+//! (stamping) snapshots the opened document bytes and works on that copy so
+//! repeated saves never compound and saved output matches the preview.
 
+pub mod document;
 pub mod dto;
 pub mod engine;
-pub mod document;
 pub mod pages;
 pub mod render;
 pub mod stamp;
@@ -25,3 +25,13 @@ pub mod worker;
 pub mod testutil;
 
 pub use worker::PdfWorker;
+
+pub(crate) fn pdfium_page_index(value: usize, label: &str) -> Result<u16, String> {
+    u16::try_from(value).map_err(|_| {
+        format!(
+            "{label} {} exceeds the PDF engine's page limit ({}).",
+            value + 1,
+            u16::MAX as usize + 1
+        )
+    })
+}
