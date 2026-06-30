@@ -2,6 +2,7 @@
   import { goto } from "$app/navigation";
   import { onMount } from "svelte";
   import { doc } from "$lib/stores/document.svelte";
+  import { viewer } from "$lib/stores/viewer.svelte";
   import {
     renderPage,
     toDataUrl,
@@ -106,7 +107,9 @@
       goto("/");
       return;
     }
-    void loadPage(0);
+    // Land on the same page the user was viewing in the Viewer.
+    const start = clamp(viewer.page, 0, doc.current.page_count - 1);
+    void loadPage(start);
   });
 
   $effect(() => {
@@ -508,6 +511,15 @@
   {/if}
 
   {#if current}
+    <div class="hint">
+      <span class="hint-icon" aria-hidden="true">✎</span>
+      <span>
+        Add text, a shape or a signature, then drag to position. Right-click the
+        page to drop an item exactly where you click. Your original file is never
+        changed.
+      </span>
+    </div>
+
     <div class="stage" bind:this={stageEl}>
       <div class="page-wrap">
         {#if render}
@@ -670,12 +682,6 @@
           >
         </div>
       {/if}
-
-      <p class="hint muted">
-        Add text, a shape or a signature, drag to position, then “Save a copy”.
-        Right-click the page to drop an item where you click. Your original file
-        is never changed.
-      </p>
     </div>
   {/if}
 </div>
@@ -721,7 +727,8 @@
 
 <style>
   .screen {
-    height: 100vh;
+    height: 100%;
+    min-height: 0;
     display: flex;
     flex-direction: column;
   }
@@ -915,9 +922,26 @@
     touch-action: none;
   }
   .hint {
-    font-size: 0.85rem;
-    text-align: center;
-    max-width: 32rem;
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.6rem 1.2rem;
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--border);
+    color: var(--text-soft);
+    font-size: 0.88rem;
+  }
+  .hint-icon {
+    display: inline-grid;
+    place-items: center;
+    width: 1.4rem;
+    height: 1.4rem;
+    flex: 0 0 auto;
+    border-radius: 6px;
+    background: var(--primary-soft);
+    color: var(--primary);
+    font-weight: 700;
   }
   .banner {
     margin: 0.8rem 1.2rem 0;

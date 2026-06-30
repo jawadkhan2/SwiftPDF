@@ -1,7 +1,6 @@
 // Over-the-air update state. A single shared store drives the global update
 // banner so the app can surface and apply updates while the user keeps working.
-import { check, type Update } from "@tauri-apps/plugin-updater";
-import { relaunch } from "@tauri-apps/plugin-process";
+import type { Update } from "@tauri-apps/plugin-updater";
 
 export type UpdatePhase =
   | "idle" // nothing to show
@@ -42,9 +41,15 @@ class UpdaterState {
    */
   async check(manual = false): Promise<void> {
     if (this.busy) return;
+    if (!isTauriRuntime()) {
+      this.phase = manual ? "uptodate" : "idle";
+      return;
+    }
+
     this.phase = "checking";
     this.error = null;
     try {
+      const { check } = await import("@tauri-apps/plugin-updater");
       const update = await check();
       if (update) {
         this.#update = update;
@@ -91,6 +96,8 @@ class UpdaterState {
 
   /** Relaunch into the freshly installed version. */
   async restart(): Promise<void> {
+    if (!isTauriRuntime()) return;
+    const { relaunch } = await import("@tauri-apps/plugin-process");
     await relaunch();
   }
 
@@ -101,6 +108,10 @@ class UpdaterState {
       this.phase = "idle";
     }
   }
+}
+
+function isTauriRuntime(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
 export const updater = new UpdaterState();

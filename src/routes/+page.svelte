@@ -1,17 +1,31 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
+  import { onMount } from "svelte";
   import { pickPdf, openPdf } from "$lib/api";
+  import {
+    listenForFileDrops,
+    splitPdfPaths,
+    type DropPosition,
+  } from "$lib/fileDrop";
+  import AppIcon from "$lib/components/AppIcon.svelte";
+  import { queueMergeDrop } from "$lib/stores/droppedFiles";
   import { setDoc } from "$lib/stores/document.svelte";
-  import Logo from "$lib/components/Logo.svelte";
+  import DropOverlay from "$lib/components/DropOverlay.svelte";
+  import ViewerIcon, { type IconName } from "$lib/components/ViewerIcon.svelte";
   import { updater } from "$lib/updater.svelte";
 
   let busy = $state(false);
   let error = $state<string | null>(null);
+  let dragActive = $state(false);
+  // How many PDFs are being dragged, and which tool tile the cursor is over —
+  // used to tell the user exactly what will happen when they drop.
+  let dragFileCount = $state(0);
+  let dropTargetRoute = $state<string | null>(null);
 
   // Open a single PDF, register it, and navigate to the chosen tool screen.
-  async function openAndGo(route: string) {
+  async function openAndGo(route: string, droppedPath?: string) {
     error = null;
-    const path = await pickPdf();
+    const path = droppedPath ?? (await pickPdf());
     if (!path) return; // user cancelled
     busy = true;
     try {
@@ -25,41 +39,148 @@
     }
   }
 
+  // Which tool tile (if any) sits under the cursor at this screen position.
+  function tileRouteAt(position?: DropPosition): string | null {
+    if (!position) return null;
+    const x = position.x / window.devicePixelRatio;
+    const y = position.y / window.devicePixelRatio;
+    const target = document.elementFromPoint(x, y);
+    const tile = target?.closest<HTMLElement>("[data-drop-route]");
+    return tile?.dataset.dropRoute ?? null;
+  }
+
+  async function handleDroppedFiles(paths: string[], position?: DropPosition) {
+    if (busy) return;
+
+    const { pdfs, rejected } = splitPdfPaths(paths);
+    if (pdfs.length === 0) {
+      error = rejected.length > 0 ? "Drop PDF files to start." : null;
+      return;
+    }
+
+    const route = tileRouteAt(position) ?? "/view";
+    if (route === "/merge" || pdfs.length > 1) {
+      queueMergeDrop(pdfs);
+      await goto("/merge");
+      return;
+    }
+
+    await openAndGo(route, pdfs[0]);
+  }
+
+  onMount(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    void listenForFileDrops({
+      onEnter: (paths) => {
+        dragActive = true;
+        dragFileCount = splitPdfPaths(paths).pdfs.length;
+      },
+      onOver: (position) => {
+        dragActive = true;
+        dropTargetRoute = tileRouteAt(position);
+      },
+      onLeave: () => {
+        dragActive = false;
+        dropTargetRoute = null;
+      },
+      onDrop: async ({ paths, position }) => {
+        dragActive = false;
+        dropTargetRoute = null;
+        dragFileCount = 0;
+        await handleDroppedFiles(paths, position);
+      },
+    }).then((cleanup) => {
+      if (disposed) {
+        cleanup();
+      } else {
+        unlisten = cleanup;
+      }
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  });
+
   const tiles = [
+    {
+      key: "view",
+      title: "Open PDF",
+      desc: "Read, zoom, browse pages, and use PDF tools",
+      icon: "viewer",
+      route: "/view",
+      featured: true,
+      action: () => openAndGo("/view"),
+    },
     {
       key: "organize",
       title: "Organize pages",
       desc: "Reorder, rotate, or delete pages",
-      icon: "▤",
+      icon: "organize",
+      route: "/organize",
+      featured: false,
       action: () => openAndGo("/organize"),
     },
     {
       key: "sign",
       title: "Fill & Sign",
       desc: "Type into forms and add your signature",
-      icon: "✎",
+      icon: "sign",
+      route: "/sign",
+      featured: false,
       action: () => openAndGo("/sign"),
     },
     {
       key: "merge",
       title: "Merge PDFs",
       desc: "Combine several files into one",
-      icon: "⧉",
+      icon: "merge",
+      route: "/merge",
+      featured: false,
       action: () => goto("/merge"),
     },
     {
       key: "split",
       title: "Split / extract",
       desc: "Pull out pages into a new file",
-      icon: "✂",
+      icon: "split",
+      route: "/split",
+      featured: false,
       action: () => openAndGo("/split"),
     },
-  ];
+  ] satisfies {
+    key: string;
+    title: string;
+    desc: string;
+    icon: IconName;
+    route: string;
+    featured: boolean;
+    action: () => void | Promise<void>;
+  }[];
+
+  const targetTile = $derived(
+    tiles.find((t) => t.route === dropTargetRoute) ?? null,
+  );
+  const dropTitle = $derived(
+    dragFileCount > 1
+      ? "Merge PDFs"
+      : (targetTile?.title ?? "Drop a PDF"),
+  );
+  const dropDetail = $derived(
+    dragFileCount > 1
+      ? `Drop to combine ${dragFileCount} files into one`
+      : targetTile
+        ? `Drop to open in ${targetTile.title}`
+        : "Drop onto a tool to choose what happens",
+  );
 </script>
 
-<main class="home">
+<main class:drop-active={dragActive} class="home">
   <header class="hero">
-    <div class="logo"><Logo size={64} /></div>
+    <div class="logo"><AppIcon size={68} /></div>
     <h1>SwiftPDF</h1>
     <p class="muted">
       Edit your PDFs right on your computer. Nothing is uploaded — your files
@@ -73,8 +194,20 @@
 
   <section class="tiles" aria-busy={busy}>
     {#each tiles as tile (tile.key)}
-      <button class="tile" onclick={tile.action} disabled={busy}>
-        <span class="tile-icon" aria-hidden="true">{tile.icon}</span>
+      <button
+        class="tile"
+        class:featured={tile.featured}
+        class:drop-target={dragActive &&
+          (dragFileCount > 1
+            ? tile.route === "/merge"
+            : tile.route === dropTargetRoute)}
+        data-drop-route={tile.route}
+        onclick={tile.action}
+        disabled={busy}
+      >
+        <span class="tile-icon" aria-hidden="true">
+          <ViewerIcon name={tile.icon} size={30} />
+        </span>
         <span class="tile-title">{tile.title}</span>
         <span class="tile-desc">{tile.desc}</span>
       </button>
@@ -90,16 +223,22 @@
   >
     {updater.phase === "checking" ? "Checking…" : "Check for updates"}
   </button>
+
+  {#if dragActive}
+    <DropOverlay title={dropTitle} detail={dropDetail} />
+  {/if}
 </main>
 
 <style>
   .home {
+    position: relative;
     max-width: 760px;
     margin: 0 auto;
     padding: 5vh 1.5rem 2rem;
     display: flex;
     flex-direction: column;
     align-items: center;
+    min-height: 100%;
   }
   .hero {
     text-align: center;
@@ -137,16 +276,41 @@
     box-shadow: var(--shadow);
     transition: transform 0.08s, box-shadow 0.15s, border-color 0.15s;
   }
+  .tile.featured {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: 0.9rem;
+    align-items: center;
+    background: #f9fbff;
+  }
+  .tile.featured .tile-icon {
+    grid-row: span 2;
+  }
   .tile:hover:not(:disabled) {
     transform: translateY(-2px);
     box-shadow: var(--shadow-lg);
     border-color: var(--primary);
   }
+  .drop-active .tile {
+    border-color: #c3d2f2;
+  }
+  .tile.drop-target {
+    border-color: var(--primary);
+    background: var(--primary-soft);
+    box-shadow: 0 0 0 3px rgba(37, 99, 246, 0.25), var(--shadow-lg);
+    transform: translateY(-2px);
+  }
   .tile:disabled {
     opacity: 0.6;
   }
   .tile-icon {
-    font-size: 1.8rem;
+    width: 2.25rem;
+    height: 2.25rem;
+    display: grid;
+    place-items: center;
+    border-radius: 9px;
+    background: var(--primary-soft);
     color: var(--primary);
   }
   .tile-title {

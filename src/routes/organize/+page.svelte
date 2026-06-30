@@ -158,19 +158,22 @@
     </button>
   </header>
 
+  <div class="hint">
+    <span class="hint-icon" aria-hidden="true">↕</span>
+    <span>
+      Drag pages to reorder · click a page to select · use the ⟳ and 🗑 buttons
+      per page. Your original file is never changed.
+    </span>
+  </div>
+
   {#if toast}
     <div class="banner {toast.kind}" role="status">{toast.msg}</div>
   {/if}
 
-  <p class="hint muted">
-    Drag pages to reorder. Click a page to select it, or use the ⟳ and 🗑
-    buttons. Your original file is never changed.
-  </p>
-
   {#if current}
     <section
       class="grid"
-      use:dndzone={{ items, flipDurationMs: flipMs }}
+      use:dndzone={{ items, flipDurationMs: flipMs, dropTargetStyle: {} }}
       onconsider={onConsider}
       onfinalize={onFinalize}
     >
@@ -212,7 +215,8 @@
 
 <style>
   .screen {
-    height: 100vh;
+    height: 100%;
+    min-height: 0;
     display: flex;
     flex-direction: column;
   }
@@ -237,9 +241,26 @@
     font-size: 0.9rem;
   }
   .hint {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
     margin: 0;
-    padding: 0.6rem 1.2rem 0;
-    font-size: 0.9rem;
+    padding: 0.6rem 1.2rem;
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--border);
+    color: var(--text-soft);
+    font-size: 0.88rem;
+  }
+  .hint-icon {
+    display: inline-grid;
+    place-items: center;
+    width: 1.4rem;
+    height: 1.4rem;
+    flex: 0 0 auto;
+    border-radius: 6px;
+    background: var(--primary-soft);
+    color: var(--primary);
+    font-weight: 700;
   }
   .grid {
     flex: 1;
@@ -247,7 +268,7 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
     gap: 1rem;
-    padding: 1rem 1.2rem 2rem;
+    padding: 1.4rem 1.2rem 2rem;
     align-content: start;
   }
   .card {

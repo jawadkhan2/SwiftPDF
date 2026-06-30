@@ -3,6 +3,7 @@
 
 import { closeDoc, type OpenResult } from "$lib/api";
 import { clearDocThumbnails } from "$lib/thumbnails";
+import { viewer } from "$lib/stores/viewer.svelte";
 
 export const doc = $state<{ current: OpenResult | null }>({ current: null });
 
@@ -19,7 +20,10 @@ async function disposeDoc(docId: string | null | undefined) {
 export async function setDoc(result: OpenResult) {
   const previousId = doc.current?.doc_id;
   doc.current = result;
-  if (previousId !== result.doc_id) await disposeDoc(previousId);
+  if (previousId !== result.doc_id) {
+    viewer.page = 0;
+    await disposeDoc(previousId);
+  }
 }
 
 export async function clearDoc() {

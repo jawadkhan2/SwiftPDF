@@ -2,7 +2,15 @@
   import { goto } from "$app/navigation";
   import { dndzone } from "svelte-dnd-action";
   import { flip } from "svelte/animate";
+  import { onMount } from "svelte";
   import { pickPdfs, mergePdfs } from "$lib/api";
+  import {
+    fileNameFromPath,
+    listenForFileDrops,
+    splitPdfPaths,
+  } from "$lib/fileDrop";
+  import { takeMergeDrop } from "$lib/stores/droppedFiles";
+  import DropOverlay from "$lib/components/DropOverlay.svelte";
   import { setDoc } from "$lib/stores/document.svelte";
 
   interface FileItem {
@@ -14,19 +22,42 @@
   let files = $state<FileItem[]>([]);
   let busy = $state(false);
   let error = $state<string | null>(null);
+  let dragActive = $state(false);
   const flipMs = 160;
 
   let nextId = 0;
 
+  function fileItem(path: string): FileItem {
+    return {
+      id: `f${nextId++}`,
+      path,
+      name: fileNameFromPath(path),
+    };
+  }
+
+  function addPaths(paths: string[]) {
+    if (busy) return;
+
+    const { pdfs, rejected } = splitPdfPaths(paths);
+
+    if (pdfs.length > 0) {
+      files = [...files, ...pdfs.map(fileItem)];
+    }
+
+    if (rejected.length > 0) {
+      error =
+        pdfs.length > 0
+          ? `Skipped ${rejected.length} non-PDF file${rejected.length === 1 ? "" : "s"}.`
+          : "Drop PDF files to add them.";
+    } else {
+      error = null;
+    }
+  }
+
   async function addFiles() {
     error = null;
     const picked = await pickPdfs();
-    const added = picked.map((path) => ({
-      id: `f${nextId++}`,
-      path,
-      name: path.split(/[\\/]/).pop() ?? path,
-    }));
-    files = [...files, ...added];
+    addPaths(picked);
   }
 
   function remove(id: string) {
@@ -58,14 +89,49 @@
       busy = false;
     }
   }
+
+  onMount(() => {
+    const pendingPaths = takeMergeDrop();
+    if (pendingPaths.length > 0) addPaths(pendingPaths);
+
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    void listenForFileDrops({
+      onEnter: () => {
+        dragActive = true;
+      },
+      onOver: () => {
+        dragActive = true;
+      },
+      onLeave: () => {
+        dragActive = false;
+      },
+      onDrop: ({ paths }) => {
+        dragActive = false;
+        addPaths(paths);
+      },
+    }).then((cleanup) => {
+      if (disposed) {
+        cleanup();
+      } else {
+        unlisten = cleanup;
+      }
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  });
 </script>
 
-<div class="screen">
+<div class:drop-active={dragActive} class="screen">
   <header class="toolbar">
     <button class="btn btn-ghost" onclick={() => goto("/")}>← Home</button>
     <div class="title"><strong>Merge PDFs</strong></div>
     <div class="spacer"></div>
-    <button class="btn" onclick={addFiles}>+ Add PDFs</button>
+    <button class="btn" onclick={addFiles} disabled={busy}>+ Add PDFs</button>
     <button class="btn btn-primary" onclick={merge} disabled={busy || files.length < 2}>
       {busy ? "Merging…" : "Merge & review"}
     </button>
@@ -105,10 +171,15 @@
       </ul>
     {/if}
   </div>
+
+  {#if dragActive}
+    <DropOverlay detail="Files will be added to the merge list." />
+  {/if}
 </div>
 
 <style>
   .screen {
+    position: relative;
     height: 100vh;
     display: flex;
     flex-direction: column;
@@ -128,6 +199,9 @@
     flex: 1;
     overflow-y: auto;
     padding: 1rem 1.2rem;
+  }
+  .drop-active .body {
+    background: var(--primary-soft);
   }
   .empty {
     max-width: 30rem;

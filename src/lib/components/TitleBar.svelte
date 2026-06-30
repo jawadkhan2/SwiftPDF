@@ -2,41 +2,65 @@
   // Custom window title bar (replaces the native Windows frame; the app runs
   // with `decorations: false`). The bar is the OS drag region; the right-hand
   // buttons drive the real window via the Tauri window API.
-  import { getCurrentWindow } from "@tauri-apps/api/window";
-  import Logo from "./Logo.svelte";
+  import { onMount } from "svelte";
+  import AppIcon from "./AppIcon.svelte";
 
   let { title = "SwiftPDF" }: { title?: string } = $props();
 
-  const appWindow = getCurrentWindow();
+  type AppWindow = {
+    isMaximized: () => Promise<boolean>;
+    onResized: (handler: () => void | Promise<void>) => Promise<() => void>;
+    minimize: () => Promise<void>;
+    toggleMaximize: () => Promise<void>;
+    close: () => Promise<void>;
+  };
+
+  let appWindow = $state<AppWindow | null>(null);
   let maximized = $state(false);
 
   // Keep the maximize/restore glyph in sync with the actual window state.
-  $effect(() => {
+  onMount(() => {
+    if (!isTauriRuntime()) return;
+
+    let disposed = false;
     let unlisten: (() => void) | undefined;
-    appWindow.isMaximized().then((m) => (maximized = m));
-    appWindow
-      .onResized(async () => {
-        maximized = await appWindow.isMaximized();
-      })
-      .then((fn) => (unlisten = fn));
-    return () => unlisten?.();
+
+    void import("@tauri-apps/api/window").then(async ({ getCurrentWindow }) => {
+      if (disposed) return;
+      const win = getCurrentWindow();
+      appWindow = win;
+      maximized = await win.isMaximized();
+      unlisten = await win.onResized(async () => {
+        maximized = await win.isMaximized();
+      });
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
   });
+
+  function isTauriRuntime(): boolean {
+    return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+  }
 </script>
 
 <div class="titlebar" data-tauri-drag-region>
   <div class="brand" data-tauri-drag-region>
-    <Logo size={18} />
+    <AppIcon size={18} title="" />
     <span class="title">{title}</span>
   </div>
 
   <div class="spacer" data-tauri-drag-region></div>
 
-  <div class="controls">
+  {#if appWindow}
+    <div class="controls">
     <button
       class="ctl"
       title="Minimize"
       aria-label="Minimize"
-      onclick={() => appWindow.minimize()}
+      onclick={() => appWindow?.minimize()}
     >
       <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 6h8" /></svg>
     </button>
@@ -45,7 +69,7 @@
       class="ctl"
       title={maximized ? "Restore" : "Maximize"}
       aria-label={maximized ? "Restore" : "Maximize"}
-      onclick={() => appWindow.toggleMaximize()}
+      onclick={() => appWindow?.toggleMaximize()}
     >
       {#if maximized}
         <svg viewBox="0 0 12 12" aria-hidden="true">
@@ -63,11 +87,12 @@
       class="ctl close"
       title="Close"
       aria-label="Close"
-      onclick={() => appWindow.close()}
+      onclick={() => appWindow?.close()}
     >
       <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 3l6 6M9 3l-6 6" /></svg>
     </button>
-  </div>
+    </div>
+  {/if}
 </div>
 
 <style>
